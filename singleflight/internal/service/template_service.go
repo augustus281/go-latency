@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/augustus281/go-latency/singleflight/internal/metrics"
 	"github.com/redis/go-redis/v9"
 	"golang.org/x/sync/singleflight"
 )
@@ -43,11 +44,15 @@ func (s *TemplateService) GetTemplate(ctx context.Context, id string) (string, e
 	}
 	if err == nil {
 		slog.Info("CACHE HIT for template", "id", id)
+		metrics.CacheHits.Inc()
 		return val, nil
 	}
 
+	metrics.CacheMisses.Inc()
+
 	result, err, shared := s.group.Do(key, func() (interface{}, error) {
 		slog.Info("DB HIT for template", "id", id)
+		metrics.DBHits.Inc()
 
 		ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 		defer cancel()
@@ -63,6 +68,7 @@ func (s *TemplateService) GetTemplate(ctx context.Context, id string) (string, e
 
 	if shared {
 		slog.Info("Result is shared from cache")
+		metrics.SingleflightShared.Inc()
 	}
 
 	if err != nil {
