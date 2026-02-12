@@ -6,13 +6,14 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
-	"time"
 
 	"github.com/augustus281/go-latency/singleflight/internal/cache"
 	"github.com/augustus281/go-latency/singleflight/internal/handler"
+	"github.com/augustus281/go-latency/singleflight/internal/metrics"
 	"github.com/augustus281/go-latency/singleflight/internal/repository"
 	"github.com/augustus281/go-latency/singleflight/internal/service"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 func main() {
@@ -36,16 +37,22 @@ func main() {
 	// Redis
 	redisClient := cache.NewRedis(os.Getenv("REDIS_ADDR"))
 
+	// Init metrics
+	metrics.InitMetrics()
+
 	// Layers
 	repo := repository.NewTemplateRepository(db)
 	svc := service.NewTemplateService(redisClient, repo)
 	h := handler.NewHandler(svc)
 
+	mux := http.NewServeMux()
+
+	mux.Handle("/metrics", promhttp.Handler())
+	mux.Handle("/", h)
+
 	server := &http.Server{
-		Addr:         ":8080",
-		Handler:      h,
-		ReadTimeout:  5 * time.Second,
-		WriteTimeout: 10 * time.Second,
+		Addr:    ":8080",
+		Handler: mux,
 	}
 
 	slog.Info("Server running on :8080")
